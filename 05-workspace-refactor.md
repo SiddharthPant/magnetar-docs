@@ -86,7 +86,7 @@ type-level dependency graph.)
 
 ## 4. Tasks touch-up
 
-`.mise.toml`: dev task now `cargo run -p server` (via bacon/watchexec).
+`mise.toml`: dev task now `watchexec -r -e rs,html -- cargo run -p server`.
 Add `[tasks.check] run = "cargo clippy --workspace --all-targets -- -D warnings"`
 and make it pass. Add `cargo fmt --check` to taste.
 

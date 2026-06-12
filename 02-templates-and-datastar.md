@@ -69,7 +69,17 @@ current bundle URL/version.)
 nested into the router, and load the script in `base.html` with
 `type="module"`.
 
-## 3. The counter — your first command/patch cycle
+## 3. Dev loop update
+
+Askama templates compile **into the binary** — editing a `.html` file must
+trigger a rebuild. Update the watchexec task:
+
+```toml
+[tasks."dev:server"]
+run = "watchexec -r -e rs,html -- cargo run"
+```
+
+## 4. The counter — your first command/patch cycle
 
 This is the miniature of the whole architecture. In `pages/home.html`:
 
@@ -109,7 +119,7 @@ The template will use `PatchElements` for almost everything (HTML is the
 engine of state — this is the hypermedia bet), and signals for ephemeral UI
 state (open menus, form fields, toggles).
 
-## 4. Commit
+## 5. Commit
 
 ```sh
 jj describe -m "phase 2: askama + datastar counter"

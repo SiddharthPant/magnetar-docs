@@ -34,21 +34,22 @@ enough to understand three ideas: the working copy *is* a commit, `jj new`
 starts the next change, `jj describe -m` names the current one. There is no
 staging area. That's 90% of daily jj.
 
-## 2. Declare your tools in `.mise.toml`
+## 2. Declare your tools in `mise.toml`
 
-Create `.mise.toml` at the repo root:
+Create `mise.toml` at the repo root (mise accepts `mise.toml` or `.mise.toml`;
+we use the visible one):
 
 ```toml
 [tools]
-rust = "1.88"                          # check rust-lang.org for current stable
+rust = "1.96.0"                          # pin current stable explicitly
 "cargo:sqlx-cli" = "latest"
-"cargo:bacon" = "latest"
-"ubi:nats-io/nats-server" = "latest"
-"ubi:nats-io/natscli" = "latest"       # the `nats` debug CLI
-watchexec = "latest"
+"cargo:bacon" = "latest"                 # interactive check loop — see note below
+"github:nats-io/nats-server" = "latest"  # github backend (ubi is deprecated)
+"github:nats-io/natscli" = "latest"      # the `nats` debug CLI
+watchexec = "latest"                     # drives all dev:* restart tasks
 
 [env]
-_.file = ".env"
+_.file = [".env", ".env.local"]          # layered: later files win
 
 [tasks.hello]
 run = "echo magnetar online"
@@ -63,36 +64,51 @@ mise run hello
 
 Notes worth internalizing:
 
-- `[env] _.file = ".env"` means **you will not use the dotenvy crate**.
-  Anything run via mise (tasks, `mise exec`, your shell if activated) gets
-  `.env` injected. In production the env comes from systemd/containers, so the
-  binaries only ever read real environment variables. One less crate, one less
-  codepath.
-- mise replaces rustup here. `cargo`, `rustc` etc. are shimmed to the pinned
-  version per-project.
-- We install `nats-server` as a dev tool because it's a single static binary —
-  Postgres stays in Docker (phase 3) because databases with state don't belong
-  in a tool manager.
+- **Env layering + the override gotcha.** `_.file` injects both files into
+  anything mise runs; `.env.local` (gitignored) overrides `.env` (committed).
+  Crucially, mise's `[env]` **overrides your shell environment** — so
+  `RUST_LOG=debug mise run dev:server` will be stomped by the value in `.env`.
+  To change log levels (or anything), edit `.env.local`, don't prefix the
+  command. Verify the behavior once so you trust it:
+  `RUST_LOG=debug mise exec -- env | grep RUST_LOG`.
+- Because of this setup, **you will not use the dotenvy crate**. In
+  production the env comes from systemd/containers; binaries only ever read
+  real environment variables.
+- **watchexec vs bacon — they overlap, with different jobs.** watchexec is a
+  generic "kill and rerun on file change" tool with plain output: right for
+  parallel `mise run dev` tasks. bacon is a Rust-specific TUI (parses compiler
+  output, persistent error panel) that wants its own terminal — and its
+  default `wait_then_restart` strategy never restarts a long-running server.
+  Rule: **watchexec in mise tasks, bacon by hand** (`bacon clippy` next to
+  your editor) when deep in a crate.
+- mise replaces rustup here; `cargo`/`rustc` are shimmed to the pinned version
+  per-project. We install `nats-server` as a dev tool because it's a single
+  static binary — Postgres stays in Docker (phase 3) because databases with
+  state don't belong in a tool manager.
 
-## 3. `.env`, `.env.example`, `.gitignore`
+## 3. Env files and `.gitignore` — the magnetar convention
 
-**Your task:** create three files.
+This template **commits `.env`** and gitignores `.env.local`. That inverts
+the common ".env is secret" convention, deliberately: the committed `.env` is
+the *documented default config* (it replaces `.env.example` — no drift between
+example and reality), and all secrets/overrides go in `.env.local`.
 
-`.env.example` (committed — the contract):
+The rule that makes this safe — write it at the top of `.env` itself:
 
 ```sh
-DATABASE_URL=postgres://magnetar:magnetar@localhost:5432/magnetar
+# Committed defaults — safe for any machine.
+# NEVER put real secrets here. Secrets and overrides go in .env.local (gitignored).
+DATABASE_URL=postgres://postgres:postgres@localhost:5432/app_db
 NATS_URL=nats://localhost:4222
 RUST_LOG=info,sqlx=warn
+PORT=3000
 ```
-
-`.env` — copy of the above, gitignored, yours to edit.
 
 `.gitignore`:
 
 ```
+.env.local
 /target
-.env
 /.data
 ```
 
@@ -114,15 +130,16 @@ commit you're building. Run `jj log` and stare at it for a second — `@` is you
 
 - [ ] `mise run hello` prints from inside the repo.
 - [ ] `mise exec -- env | grep DATABASE_URL` shows the value from `.env`.
+- [ ] `RUST_LOG=debug mise exec -- env | grep RUST_LOG` shows `.env` winning
+      over your shell — and you know where overrides actually go.
 - [ ] `rustc --version` inside the repo shows the pinned toolchain.
 - [ ] `jj log` shows your described phase-0 change with a new empty `@` on top.
 - [ ] `git log` shows the same commit (colocation working).
 
 ## Stretch goals
 
-- Add `[settings] experimental_monorepo_root = true`? No — resist. Add nothing
-  speculative; the template earns features per phase.
-- Read `mise tasks --help` and note that `depends` runs in parallel. You'll use
-  that in phase 4 to get a Procfile-style `mise run dev`.
+- Read `mise tasks --help` and note that `depends` runs in parallel. You'll
+  use that in phase 4 to get a Procfile-style `mise run dev`.
+- Resist adding anything speculative; the template earns features per phase.
 
 Next: `01-hello-axum.md` — first Rust.
