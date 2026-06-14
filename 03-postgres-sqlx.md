@@ -12,24 +12,46 @@ for now — NATS automates the re-render in phase 4).
 
 ## 1. Postgres in Docker
 
-Create `compose.yaml`:
+Create `compose.yml`:
 
 ```yaml
 services:
   db:
-    image: postgres:17
+    image: postgres:18.4-alpine3.23
     environment:
-      POSTGRES_USER: magnetar
-      POSTGRES_PASSWORD: magnetar
-      POSTGRES_DB: magnetar
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: app_db
     ports: ["5432:5432"]
-    volumes: [pgdata:/var/lib/postgresql/data]
+    volumes: [pgdata:/var/lib/postgresql]
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-app_db}",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 volumes:
   pgdata:
 ```
 
-Add mise tasks: `db:up` (`docker compose up -d db`) and `db:psql`
-(`docker compose exec db psql -U magnetar`).
+Add mise tasks:
+
+```toml
+[tasks."db:up"]
+run = "docker compose up -d db"
+
+[tasks."db:down"]
+run = "docker compose down db"
+
+[tasks."db:prompt"]
+run = "docker compose exec db psql -U postgres -d app_db"
+
+[tasks."db:migrate"]
+run = "sqlx migrate run"
+```
 
 ## 2. SQLx setup + first migration
 
@@ -37,20 +59,56 @@ Add mise tasks: `db:up` (`docker compose up -d db`) and `db:psql`
 cargo add sqlx --features postgres,runtime-tokio,uuid,time,migrate
 cargo add uuid --features v7,serde
 cargo add time --features serde
+```
+
+Make sure `.env` matches the compose credentials:
+
+```env
+DATABASE_URL=postgres://postgres:postgres@localhost:5432/app_db
+```
+
+```sh
 sqlx database create        # uses DATABASE_URL from .env via mise
 sqlx migrate add create_monitors
 ```
 
 **Your task:** write the migration. Design it yourself first, then compare:
 
-- `id uuid primary key` — generate UUIDv7 in Rust (`Uuid::now_v7()`), they're
-  time-sortable.
+- `id uuid primary key` — Postgres 18 has `uuidv7()` built in, so you can use
+  `DEFAULT uuidv7()` in the schema. If you ever downgrade to PG 17 or earlier,
+  generate `Uuid::now_v7()` in Rust instead.
 - `name text not null`
 - `url text not null`
 - `interval_seconds int not null default 60`
 - `created_at timestamptz not null default now()`
+- `updated_at timestamptz not null default now()` (stretch goal)
 
-Run `sqlx migrate run`, verify in `db:psql` with `\d monitors`.
+Example migration:
+
+```sql
+CREATE FUNCTION update_updated_at_column () RETURNS trigger AS $$
+BEGIN
+    NEW.updated_at = now();
+    RETURN NEW;
+END;
+$$ language plpgsql;
+
+CREATE TABLE monitors (
+    id uuid PRIMARY KEY DEFAULT uuidv7 (),
+    name TEXT NOT NULL,
+    url TEXT NOT NULL,
+    interval_seconds int NOT NULL DEFAULT 60,
+    created_at timestamptz NOT NULL DEFAULT now(),
+    updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE TRIGGER update_monitors_updated_at
+    BEFORE UPDATE ON monitors
+    FOR EACH ROW
+    EXECUTE FUNCTION update_updated_at_column ();
+```
+
+Run `sqlx migrate run`, verify in `mise run db:prompt` with `\d monitors`.
 
 **Decide and remember:** migrations run via CLI in dev. In phase 11 you'll
 embed them in the binary with `sqlx::migrate!()` so deploys self-migrate.
@@ -69,7 +127,7 @@ embed them in the binary with `sqlx::migrate!()` so deploys self-migrate.
 ```rust
 let monitors = sqlx::query_as!(
     Monitor,
-    "select id, name, url, interval_seconds, created_at
+    "select id, name, url, interval_seconds, created_at, updated_at
      from monitors order by created_at desc"
 ).fetch_all(&state.db).await?;
 ```
@@ -124,7 +182,8 @@ formalize it in phase 10.
 
 ## Stretch goals
 
-- Add `updated_at` + a Postgres trigger to maintain it. You'll thank yourself.
+- The example migration above already includes `updated_at` + a Postgres trigger
+  to maintain it. If you skipped it, add it now — you'll thank yourself.
 - Try `query_as::<_, Monitor>()` (runtime, FromRow) for one query to feel the
   difference, then change it back to the macro and keep the macro rule:
   **macros by default**, runtime API only for genuinely dynamic SQL.
