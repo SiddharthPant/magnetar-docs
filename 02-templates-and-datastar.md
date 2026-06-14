@@ -130,12 +130,12 @@ jj new
 
 ## Checkpoints
 
-- [ ] View-source on `/` shows server-rendered HTML; the counter works with
+- [x] View-source on `/` shows server-rendered HTML; the counter works with
       the network tab showing a POST answered by `text/event-stream`.
-- [ ] Both variants (signals patch, elements patch) work and you can say when
+- [x] Both variants (signals patch, elements patch) work and you can say when
       you'd use which.
-- [ ] A misspelled variable in a template fails `cargo build`, not runtime.
-- [ ] Your `render()` helper + `AppError` are in place — handlers return
+- [x] A misspelled variable in a template fails `cargo build`, not runtime.
+- [x] Your `render()` helper + `AppError` are in place — handlers return
       `Result<impl IntoResponse, AppError>`.
 
 ## Stretch goals
@@ -144,5 +144,20 @@ jj new
   flight — one attribute, big UX win, worth having in the template's DNA.
 - Sketch (on paper) what `count` living in Postgres would change. That's
   phase 3.
+
+## Implementation notes
+
+- `AppError` is a newtype around `anyhow::Error` implementing `IntoResponse`. It
+  does **not** implement `std::error::Error`, so Datastar SSE streams use
+  `std::convert::Infallible` as their error type.
+- The `+1 (elements)` button renders a fragment that still contains
+  `data-text="$count"`. Datastar will overwrite the server-rendered number with
+  the signal value after the element is patched, so the handler emits both
+  `PatchSignals` (update the signal first) and `PatchElements` (replace the
+  element second). This is a hybrid demo; in production, `PatchElements` is the
+  primary channel for server-rendered HTML, while signals stay reserved for
+  ephemeral UI state.
+- `data-indicator:fetching` and `data-attr:disabled="$fetching"` were added to
+  both buttons for the stretch-goal UX.
 
 Next: `03-postgres-sqlx.md`.
