@@ -8,6 +8,14 @@ Still no auth, no teams; a monitor is just a row anyone can make.
 queries, connection pooling, the command → write → re-render loop (manually,
 for now — NATS automates the re-render in phase 4).
 
+**Status:** complete in `/Users/sid/projects/playground/magnetar`. The database
+container is running, the `create_monitors` migration is installed, `\d monitors`
+matches the migration shape, `cargo check` passes, the broken-query test confirms
+SQLx catches schema mistakes at build time, and manual smoke tests verified the
+`/monitors` page plus create/invalid-url/delete Datastar flows. Remaining
+follow-up: commit the completed phase with the command in section 5, then move on
+to phase 4.
+
 ---
 
 ## 1. Postgres in Docker
@@ -173,12 +181,12 @@ formalize it in phase 10.
 
 ## Checkpoints
 
-- [ ] Fresh clone test: `rm`-nothing, but mentally — `mise run db:up`,
+- [x] Fresh clone test: `rm`-nothing, but mentally — `mise run db:up`,
       `sqlx database setup`, `mise run dev:server` is the whole bring-up.
-- [ ] Creating a monitor updates the list without reload and clears the form.
-- [ ] Invalid URL shows an inline error, no row written.
-- [ ] A wrong column name in `query_as!` fails the **build**.
-- [ ] `\d monitors` matches your migration exactly.
+- [x] Creating a monitor updates the list without reload and clears the form.
+- [x] Invalid URL shows an inline error, no row written.
+- [x] A wrong column name in `query_as!` fails the **build**.
+- [x] `\d monitors` matches your migration exactly.
 
 ## Stretch goals
 
